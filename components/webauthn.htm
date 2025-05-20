@@ -1,0 +1,388 @@
+
+<!-- saved from url=(0047)https://xifengfang-okta.github.io/webauthn.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <title>webauthn test</title>
+<style>
+    .retTxt {
+        padding-left: 20px;
+    }
+    .divInputOuter {
+        margin-left: 20px;
+    }
+    .divInputOuter div{
+        margin-bottom: 5px;
+    }
+    .mainbody {margin-left: 10px;}
+    #loginResultPannel { background-color: green;}
+</style>
+        <script type="text/javascript" src="./webauthn test_files/cbor.js.download"></script>
+        <script src="./webauthn test_files/base64url-arraybuffer.js.download"></script>
+        <script type="text/javascript">
+
+function arrayBufferToStr(buf) {
+  return String.fromCharCode.apply(null, new Uint8Array(buf));
+}
+
+function base64UrlSafeToBase64(str) {
+  return str.replace(new RegExp('_', 'g'), '/').replace(new RegExp('-', 'g'), '+');
+};
+function binToStr(bin){
+	console.log("test");
+  return btoa(new Uint8Array(bin).reduce((s, byte) => s + String.fromCharCode(byte), ''));
+};
+
+function strToBin(str) {
+  return Uint8Array.from(atob(base64UrlSafeToBase64(str)), c => c.charCodeAt(0));
+};
+
+function cleanStr(str) {
+    var newstr = str.replace(new RegExp('_', 'g'), '/').replace(new RegExp('-', 'g'), '+');
+    return newstr;
+}
+
+function getAuthenticatorSelection(){
+   var requireResidentKey = document.getElementById("requireResidentKey").value
+   var authenticatorSelection = {};
+   if(document.getElementById("includeAuthenticatorAttachment").checked) {
+      authenticatorSelection.authenticatorAttachment = document.getElementById("authenticatorAttachment").value;
+   }
+   if(document.getElementById("includeRequireResidentKey").checked) {
+      authenticatorSelection.requireResidentKey = document.getElementById("requireResidentKey").value === "true";
+   }
+   if(document.getElementById("includeResidentKey").checked) {
+      authenticatorSelection.residentKey = document.getElementById("residentKey").value;
+   }
+   if(document.getElementById("includeUserVerification").checked) {
+      authenticatorSelection.userVerification = document.getElementById("userVerification").value;
+   }
+   return authenticatorSelection;
+}
+
+function getUserObj(){
+   var userId = document.getElementById("userIdField").value;
+   var userDisplayName = document.getElementById("userDisplayNameField").value;
+
+   if(userDisplayName == "") {
+     userDisplayName = userId;
+   }
+   var userName = document.getElementById("userNameField").value;
+   if(userName == "") {
+     userName = userId;
+   }
+   var userObj = {
+     id: strToBin(userId),//Uint8Array.from(btoa(userId), c => c.charCodeAt(0)),
+     name: userName,
+     displayName: userDisplayName 
+   }
+   return userObj;
+}
+
+function getExtension(){
+    var extension = {};
+    if(document.getElementById("includeCredProps").checked) {
+        extension.credProps = document.getElementById("credProps").value === "true";
+    }
+    if(document.getElementById("includeDevicePubKey").checked) {
+        extension.devicePubKey = document.getElementById("devicePubKey").value === "true";
+    }
+    return extension;
+}
+
+function getRP(){
+    var rp = {
+        name: document.getElementById("rpNameField").value,
+        id: document.getElementById("rpIdField").value
+    };
+    return rp;
+}
+
+function getPublicKeyCredentialCreationOptions(){
+    var challengeStr = document.getElementById("challengefield").value;
+    if (!challengeStr) {
+	challengeStr = "challenge";
+    }
+	
+    var publicKeyCredentialCreationOptions = {
+        challenge: strToBin(challengeStr),
+        rp: getRP(),
+        user: getUserObj(),
+        pubKeyCredParams: [{alg: -7, type: "public-key"}, {alg: -257, type: "public-key"}],
+        authenticatorSelection: getAuthenticatorSelection(),
+        timeout: 60000,
+        //attestation: getAttestation(), // "direct",
+        extensions: getExtension()
+    };
+    if(document.getElementById("includeAttestation").checked) {
+        publicKeyCredentialCreationOptions.attestation = document.getElementById("attestation").value;
+    }
+    return publicKeyCredentialCreationOptions;
+}
+
+function register() {
+   var credId = document.getElementById("credIdfield").value;
+   const credentials = [];
+   if(credId!=""){
+    credentials.push({
+        type: 'public-key',
+        id: strToBin(cleanStr(credId)),
+    });
+   }
+   var pubCreationOption = getPublicKeyCredentialCreationOptions();
+   pubCreationOption.excludeCredentials = credentials;
+   navigator.credentials.create({
+        publicKey: pubCreationOption
+   }).then(credential => {
+
+        console.log(credential);
+        console.log("extensions:");
+        var ext = credential.getClientExtensionResults();
+        console.log(ext);
+        document.getElementById('extension').innerHTML = JSON.stringify(ext);
+        // id: 'ADSUllKQmbqdGtpu4sjseh4cg2TxSvrbcHDTBsv4NSSX9...',
+        // rawId: ArrayBuffer(59),
+        // response: AuthenticatorAttestationResponse {
+        //     clientDataJSON: ArrayBuffer(121),
+        //     attestationObject: ArrayBuffer(306),
+        // },
+        // type: 'public-key'
+	document.getElementById("loginResultClientData").innerHTML = binToStr(credential.response.clientDataJSON);
+	document.getElementById("loginResultAttestation").innerHTML = binToStr(credential.response.attestationObject);
+	   
+        // decode the clientDataJSON into a utf-8 string
+        const utf8Decoder = new TextDecoder('utf-8');
+        const decodedClientData = utf8Decoder.decode(credential.response.clientDataJSON)
+
+        // parse the string as an object
+        const clientDataObj = JSON.parse(decodedClientData);
+
+        console.log(clientDataObj);
+        // note: this challenge is base64url.encode'd of the input binary challenge
+        // challenge: "p5aV2uHXr0AOqUk7HQitvi-Ny1....",
+        // origin: "https://webauthn.guide",
+        // type: "webauthn.create"
+
+        // Parse attestation
+        // note: a CBOR decoder library is needed here.
+        const decodedAttestationObj = CBOR.decode(credential.response.attestationObject);
+        console.log(decodedAttestationObj);
+
+        // authData: Uint8Array(196),
+        // fmt: "fido-u2f",
+        // attStmt: {
+        //     sig: Uint8Array(70),
+        //     x5c: Array(1),
+        // },
+
+        const {authData} = decodedAttestationObj;
+
+	    // get AAGUID
+        const aaguid = authData.slice(37,53);
+        const aaguidAscii = base64url.encode(aaguid);
+        console.log('aaguid: ' + aaguidAscii);
+        document.getElementById("aaguidlist").innerHTML = aaguidAscii;
+
+        // get the length of the credential ID
+        const dataView = new DataView(new ArrayBuffer(2));
+        const idLenBytes = authData.slice(53, 55);
+        idLenBytes.forEach((value, index) => dataView.setUint8(index, value));
+        const credentialIdLength = dataView.getUint16();
+
+        // get the credential ID, TO BE STORED on server
+        const credentialId = authData.slice(55, 55 + credentialIdLength);
+        const credentialIdAscii = base64url.encode(credentialId);
+        console.log(credentialId);
+        console.log(credentialIdAscii);
+
+        // get the public key object. TO BE STORED on server
+        const publicKeyBytes = authData.slice(55 + credentialIdLength);
+        console.log(publicKeyBytes);
+
+        // the publicKeyBytes are encoded again as CBOR
+        //const publicKeyObject = CBOR.decode(publicKeyBytes.buffer);
+        //console.log(publicKeyObject)
+
+        var allCredIdHTML = document.getElementById("allCredId").innerHTML;
+        if(allCredIdHTML!=''){
+            allCredIdHTML += "<br />";
+        }
+	    document.getElementById("allCredId").innerHTML =  allCredIdHTML + credentialIdAscii;
+        // 1: 2,
+        // 3: -7,
+        // -1: 1,
+        // -2: Uint8Array(32) ...
+        // -3: Uint8Array(32) ...
+        document.getElementById('loginResultPannel').innerHTML="registration success";
+        console.log("registration success");
+    }).catch(error => {
+        console.log(error);
+        document.getElementById('loginResultPannel').innerHTML=error;
+    }).finally( () => {
+        console.log("finally for registration");
+    });
+}
+
+function getPublicKeyCredentialRequestOptions() {
+    var pubGetOption = {
+        challenge: Uint8Array.from("challenge", c => c.charCodeAt(0)),  // should be a random string
+        allowCredentials: [{
+            //id: base64url.decode(credentialId2New),
+            type: 'public-key',
+            //transports: ['internal'],
+        }
+        ],
+        timeout: 60000,
+    };
+    return pubGetOption;
+}
+
+function login() {
+    var publicKeyCredentialRequestOptions = getPublicKeyCredentialRequestOptions();
+    var credid = document.getElementById("credIdfield").value;
+    if(credid != '') {
+      publicKeyCredentialRequestOptions.allowCredentials[0].id = base64url.decode(credid);
+    } else {
+      publicKeyCredentialRequestOptions.allowCredentials = [];
+    }
+    navigator.credentials.get({
+        publicKey: publicKeyCredentialRequestOptions
+    }).then( assertion => {
+        console.log("assertion:");
+        console.log(assertion);
+
+        const userHandle = assertion.response.userHandle;
+        const userHandleBtoA = binToStr(userHandle);
+        console.log("userHandleBtoA:" + userHandleBtoA);
+        document.getElementById("userHandle").innerHTML = userHandleBtoA;
+
+        //const base64DecodedUserHandle = base64url.decode(userHandleBtoA);
+        //console.log(base64DecodedUserHandle);
+
+        //const decodedUserHandleFinal = binToStr(base64DecodedUserHandle);
+        //console.log("final UserId:" + decodedUserHandleFinal);
+
+    
+        // TODO, verify signature on the server side
+        document.getElementById('loginResultPannel').innerHTML = "Login Success";
+        console.log("login successfully");
+    }).catch(error => {
+        console.log(error);
+	    document.getElementById('loginResultPannel').innerHTML=error;
+    }).finally( () => {
+        console.log("finally for login");
+    });
+}
+
+</script>
+</head>
+<body onload="">
+<div class="mainbody">
+
+<h1>WebAuthn experience demo</h1>
+
+<h2>Test authenticator enrollment experience</h2>
+<button style="height:80px;width:300px; cursor: pointer;" onclick="register()">Register</button>
+<button style="height:80px;width:300px; cursor: pointer;" onclick="login()">Login</button><br><br>
+
+<br>
+<div>CredId(excludeCredentials/allowCredentials):<br><input type="text" style="width:100%" id="credIdfield"></div>
+
+<br>
+<div>Challenge:<br><input type="text" style="width:100%" id="challengefield"></div>
+	
+<br>
+<div>RP:<br>
+    <div class="divInputOuter">
+        <div>id:<br><input type="text" id="rpIdField" style="width:100%" value=""></div>
+        <div>name:<br><input type="text" style="width:100%" id="rpNameField" value=""></div><br>
+    </div>
+</div>
+
+<div>User:<br>
+    <div class="divInputOuter">
+        <div>id:<br><input type="text" id="userIdField" value="abcd"></div>
+        <div>displayName:<br><input type="text" style="width:100%" id="userDisplayNameField" value="abcd"></div>
+        <div>name:<br><input type="text" style="width:100%" id="userNameField" value="abcd"></div><br>
+    </div>
+</div>
+
+<div>AuthenticatorSelection:<br>
+    <div class="divInputOuter">
+        <div>
+            <input type="checkbox" id="includeAuthenticatorAttachment" checked=""><label for="authenticatorAttachment">authenticatorAttachment</label>
+            <select id="authenticatorAttachment"><option value="platform">platform</option><option value="cross-platform">cross-platform</option></select>
+        </div>
+        <div>
+            <input type="checkbox" id="includeRequireResidentKey" checked=""><label for="requireResidentKey">requireResidentKey</label>
+            <select id="requireResidentKey"><option value="true">true</option><option value="false">false</option></select>
+        </div>
+
+        <div>
+            <input type="checkbox" id="includeResidentKey" checked=""><label for="residentKey">residentKey</label>
+            <select id="residentKey"><option value="required">required</option><option value="preferred">preferred</option><option value="discouraged">discouraged</option></select>
+        </div>
+
+        <div>
+            <input type="checkbox" id="includeUserVerification" checked=""><label for="userVerification">userVerification</label>
+            <select id="userVerification"><option value="preferred">preferred</option><option value="required">required</option><option value="discouraged">discouraged</option></select>
+        </div>
+    </div>
+</div>
+
+<br>
+<div>
+    <input type="checkbox" id="includeAttestation" checked=""><label for="attestation">Attestation</label>
+    <select id="attestation"><option value="direct">direct</option><option value="indirect">indirect</option><option value="enterprise">enterprise</option><option value="none">none</option></select>
+</div>
+
+<br>
+<div>Extensions:<br>
+    <div class="divInputOuter">
+        <div>
+            <input type="checkbox" id="includeCredProps" checked=""><label for="credProps">credProps</label>
+            <select id="credProps"><option value="true">true</option><option value="false">false</option></select>
+        </div>
+        <div>
+            <input type="checkbox" id="includeDevicePubKey" checked=""><label for="devicePubKey">devicePubKey</label>
+            <select id="devicePubKey"><option value="true">true</option><option value="false">false</option></select>
+        </div>
+    </div>
+</div>
+
+
+<br>
+<b>CredIds</b>
+<div id="allCredId" class="retTxt"></div>
+
+<br>
+<b>AAGUID List</b> <br>
+<div id="aaguidlist" class="retTxt"></div>
+
+<br>
+<b>UserHandle</b> <br>
+<div id="userHandle" class="retTxt"></div>
+
+
+<br>
+<b>extension</b> <br>
+<div id="extension" class="retTxt"></div>
+
+
+<br>
+<b>Result</b>
+<div id="loginResultPannel" class="retTxt"></div>
+
+	
+<br>
+<b>Signed Data</b><br>
+<b>ClientData:</b> <div id="loginResultClientData" class="retTxt"></div>
+<b>Attestation:</b> <div id="loginResultAttestation" class="retTxt"></div>
+
+	
+<script>
+    document.getElementById("rpIdField").value = window.location.host;
+    document.getElementById("rpNameField").value = "test site";
+</script>
+</div>
+
+
+</body></html>
